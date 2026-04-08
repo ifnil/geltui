@@ -1,8 +1,8 @@
-use std::{io, process::Command, time::Duration};
+use std::{io, process::Command, thread, time::Duration};
 
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -29,6 +29,7 @@ pub struct App {
 
 struct BrowserState {
     parent_id: Option<String>,
+    parent_kind: Option<String>,
     title: String,
     items: Vec<MediaItem>,
     selected: usize,
@@ -40,12 +41,19 @@ impl App {
         Ok(Self {
             config,
             session,
-            stack: vec![BrowserState::new(None, "Libraries".to_string(), root)],
+            stack: vec![BrowserState::new(None, None, "Libraries".to_string(), root)],
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
         })
     }
 
     pub fn run(mut self) -> Result<()> {
+        let original_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+            original_hook(info);
+        }));
+
         enable_raw_mode().context("failed to enable raw mode")?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
@@ -73,9 +81,16 @@ impl App {
                 let event = event::read().context("failed to read terminal event")?;
                 if let Event::Key(key) = event
                     && key.kind == KeyEventKind::Press
-                    && self.handle_key(key.code)?
                 {
-                    break;
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        break;
+                    }
+
+                    if self.handle_key(key.code)? {
+                        break;
+                    }
                 }
             }
         }
@@ -98,55 +113,67 @@ impl App {
     }
 
     fn open_selected(&mut self) -> Result<()> {
-        let Some(item) = self.current().selected_item().cloned() else {
+        let Some(item) = self.current().selected_item() else {
             self.status = "Nothing selected.".to_string();
             return Ok(());
         };
 
-        if item.is_folder {
-            let title = item.name.clone();
-            let items = self.session.fetch_children(&item.id)?;
+        let id = item.id.clone();
+        let name = item.name.clone();
+        let kind = item.kind.clone();
+        let is_folder = item.is_folder;
+        let is_playable = item.is_playable();
+
+        if is_folder {
+            let items = self.session.fetch_children(&id)?;
             self.stack
-                .push(BrowserState::new(Some(item.id.clone()), title, items));
+                .push(BrowserState::new(Some(id), Some(kind), name, items));
             self.status = "Loaded folder.".to_string();
             return Ok(());
         }
 
-        if !item.is_playable() {
-            self.status = format!("`{}` is not a playable item.", item.name);
+        if !is_playable {
+            self.status = format!("`{name}` is not a playable item.");
             return Ok(());
         }
 
-        let url = self.session.playback_url(&item.id)?;
+        let url = self.session.playback_url(&id)?;
+        let auth_token = self.session.auth_token().to_string();
         let mpv_bin = self.config.mpv_bin.as_deref().unwrap_or("mpv");
         let mut command = Command::new(mpv_bin);
+
+        command.arg(format!(
+            "--http-header-fields=X-MediaBrowser-Token: {auth_token}"
+        ));
 
         if let Some(extra_args) = self.config.mpv_args.as_deref() {
             command.args(extra_args);
         }
 
-        command.arg(url).spawn().with_context(|| {
+        let mut child = command.arg(url).spawn().with_context(|| {
             format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
         })?;
 
-        self.status = format!("Playing `{}` in MPV.", item.name);
+        thread::spawn(move || {
+            let _ = child.wait();
+        });
+
+        self.status = format!("Playing `{name}` in MPV.");
         Ok(())
     }
 
     fn reload_current(&mut self) -> Result<()> {
-        let refreshed = if self.stack.len() == 1 {
-            self.session.fetch_root()?
-        } else {
-            match self.current().parent_id.as_deref() {
-                Some(parent_id) => self.session.fetch_children(parent_id)?,
-                None => self.session.fetch_root()?,
-            }
+        let refreshed = match self.current().parent_id.as_deref() {
+            Some(parent_id) => self.session.fetch_children(parent_id)?,
+            None => self.session.fetch_root()?,
         };
 
-        let parent_id = self.current().parent_id.clone();
-        let title = self.current().title.clone();
-        let selected = self.current().selected;
-        *self.current_mut() = BrowserState::with_selection(parent_id, title, refreshed, selected);
+        let current = self.current_mut();
+        let parent_id = current.parent_id.clone();
+        let parent_kind = current.parent_kind.clone();
+        let title = current.title.clone();
+        let selected = current.selected;
+        *current = BrowserState::with_selection(parent_id, parent_kind, title, refreshed, selected);
         self.status = "Reloaded view.".to_string();
         Ok(())
     }
@@ -159,6 +186,8 @@ impl App {
     }
 
     fn render(&self, frame: &mut Frame) {
+        let current = self.current();
+
         let [header, body, footer_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -173,13 +202,13 @@ impl App {
             .constraints([Constraint::Percentage(46), Constraint::Percentage(54)])
             .areas(body);
 
-        let title = Paragraph::new(self.current().title.clone())
+        let title = Paragraph::new(current.title.clone())
             .block(Block::default().borders(Borders::ALL).title("geltui"))
             .style(Style::default().add_modifier(Modifier::BOLD));
         frame.render_widget(title, header);
 
-        let items: Vec<ListItem> = self
-            .current()
+        let is_season = current.is_season_view();
+        let items: Vec<ListItem> = current
             .items
             .iter()
             .map(|item| {
@@ -190,7 +219,8 @@ impl App {
                 } else {
                     "-"
                 };
-                ListItem::new(Line::from(format!("{icon} {}", item.name)))
+                let label = format_list_label(item, is_season);
+                ListItem::new(Line::from(format!("{icon} {label}")))
             })
             .collect();
 
@@ -200,13 +230,12 @@ impl App {
             .highlight_symbol("> ");
 
         let mut state = ListState::default();
-        if !self.current().items.is_empty() {
-            state.select(Some(self.current().selected));
+        if !current.items.is_empty() {
+            state.select(Some(current.selected));
         }
         frame.render_stateful_widget(list, list_area, &mut state);
 
-        let details = self
-            .current()
+        let details = current
             .selected_item()
             .map(render_details)
             .unwrap_or_else(|| {
@@ -245,12 +274,18 @@ impl App {
 }
 
 impl BrowserState {
-    fn new(parent_id: Option<String>, title: String, items: Vec<MediaItem>) -> Self {
-        Self::with_selection(parent_id, title, items, 0)
+    fn new(
+        parent_id: Option<String>,
+        parent_kind: Option<String>,
+        title: String,
+        items: Vec<MediaItem>,
+    ) -> Self {
+        Self::with_selection(parent_id, parent_kind, title, items, 0)
     }
 
     fn with_selection(
         parent_id: Option<String>,
+        parent_kind: Option<String>,
         title: String,
         items: Vec<MediaItem>,
         selected: usize,
@@ -263,10 +298,15 @@ impl BrowserState {
 
         Self {
             parent_id,
+            parent_kind,
             title,
             items,
             selected,
         }
+    }
+
+    fn is_season_view(&self) -> bool {
+        self.parent_kind.as_deref() == Some("Season")
     }
 
     fn next(&mut self) {
@@ -290,13 +330,84 @@ impl BrowserState {
     }
 }
 
-fn render_details(item: &MediaItem) -> Text<'static> {
-    let mut lines = vec![
-        Line::from(item.name.clone()),
-        Line::from(item.secondary_label()),
-        Line::from(""),
-    ];
+fn format_list_label(item: &MediaItem, is_season: bool) -> String {
+    if is_season
+        && let Some(ep) = item.index_number
+    {
+        return format!("{ep:02} \u{2014} {}", item.name);
+    }
+    item.name.clone()
+}
 
+fn render_details(item: &MediaItem) -> Text<'static> {
+    use std::fmt::Write;
+
+    let mut lines = vec![Line::from(item.name.clone())];
+
+    // Series/season line for episodes
+    if let Some(series) = &item.series_name {
+        let season_ep = match (item.parent_index_number, item.index_number) {
+            (Some(s), Some(e)) => format!("{series} \u{2014} Season {s}, Episode {e}"),
+            (None, Some(e)) => format!("{series} \u{2014} Episode {e}"),
+            _ => series.clone(),
+        };
+        lines.push(Line::from(season_ep));
+    }
+
+    lines.push(Line::from(""));
+
+    // Metadata line: official rating, community rating, year, child count, runtime
+    let mut meta = String::new();
+
+    if let Some(rating) = &item.official_rating {
+        meta.push_str(rating);
+    }
+
+    if let Some(score) = item.community_rating {
+        if !meta.is_empty() {
+            meta.push_str(" | ");
+        }
+        write!(meta, "\u{2605} {score:.1}").unwrap();
+    }
+
+    if let Some(yr) = item.production_year {
+        if !meta.is_empty() {
+            meta.push_str(" | ");
+        }
+        write!(meta, "{yr}").unwrap();
+    }
+
+    if let Some(count) = item.child_count {
+        if !meta.is_empty() {
+            meta.push_str(" | ");
+        }
+        write!(meta, "{count} items").unwrap();
+    }
+
+    if let Some(rt) = item.runtime_ticks {
+        if !meta.is_empty() {
+            meta.push_str(" | ");
+        }
+        meta.push_str(&crate::jellyfin::format_runtime(rt));
+    }
+
+    if !meta.is_empty() {
+        lines.push(Line::from(meta));
+    }
+
+    // Collection type (for library folders)
+    if let Some(ct) = &item.collection_type {
+        lines.push(Line::from(ct.clone()));
+    }
+
+    // Genres
+    if !item.genres.is_empty() {
+        lines.push(Line::from(item.genres.join(", ")));
+    }
+
+    lines.push(Line::from(""));
+
+    // Overview
     match item.overview.as_deref() {
         Some(overview) if !overview.trim().is_empty() => {
             lines.push(Line::from(overview.to_string()))

@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub server_url: String,
     pub api_key: Option<String>,

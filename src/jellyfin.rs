@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result, bail};
 use reqwest::{
     Url,
@@ -38,6 +40,18 @@ pub struct MediaItem {
     pub media_type: Option<String>,
     #[serde(rename = "CollectionType")]
     pub collection_type: Option<String>,
+    #[serde(rename = "SeriesName")]
+    pub series_name: Option<String>,
+    #[serde(rename = "IndexNumber")]
+    pub index_number: Option<u32>,
+    #[serde(rename = "ParentIndexNumber")]
+    pub parent_index_number: Option<u32>,
+    #[serde(rename = "CommunityRating")]
+    pub community_rating: Option<f32>,
+    #[serde(rename = "OfficialRating")]
+    pub official_rating: Option<String>,
+    #[serde(rename = "Genres", default)]
+    pub genres: Vec<String>,
 }
 
 impl MediaItem {
@@ -52,27 +66,7 @@ impl MediaItem {
         ) || matches!(self.media_type.as_deref(), Some("Video" | "Audio"))
     }
 
-    pub fn secondary_label(&self) -> String {
-        let mut parts = vec![self.kind.clone()];
 
-        if let Some(collection_type) = self.collection_type.as_deref() {
-            parts.push(collection_type.to_string());
-        }
-
-        if let Some(year) = self.production_year {
-            parts.push(year.to_string());
-        }
-
-        if let Some(count) = self.child_count {
-            parts.push(format!("{count} items"));
-        }
-
-        if let Some(runtime) = self.runtime_ticks {
-            parts.push(format_runtime(runtime));
-        }
-
-        parts.join(" | ")
-    }
 }
 
 impl Session {
@@ -124,7 +118,7 @@ impl Session {
                 ("SortOrder", "Ascending"),
                 (
                     "Fields",
-                    "Overview,ChildCount,ProductionYear,RunTimeTicks,MediaType,CollectionType",
+                    "Overview,ChildCount,ProductionYear,RunTimeTicks,MediaType,CollectionType,Genres",
                 ),
             ])
             .send()
@@ -141,10 +135,12 @@ impl Session {
     pub fn playback_url(&self, item_id: &str) -> Result<String> {
         let mut url = Url::parse(&format!("{}/Items/{item_id}/Download", self.server_url))
             .context("failed to build playback URL")?;
-        url.query_pairs_mut()
-            .append_pair("api_key", &self.auth_token)
-            .append_pair("download", "false");
+        url.query_pairs_mut().append_pair("download", "false");
         Ok(url.to_string())
+    }
+
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
     }
 }
 
@@ -233,13 +229,16 @@ fn build_client(auth_token: &str) -> Result<Client> {
 
     Client::builder()
         .default_headers(headers)
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(5))
         .build()
         .context("failed to build Jellyfin HTTP client")
 }
 
 fn auth_header(token: Option<&str>) -> Result<String> {
-    let mut header = String::from(
-        r#"MediaBrowser Client="geltui", Device="geltui", DeviceId="geltui", Version="0.1.0""#,
+    let mut header = format!(
+        r#"MediaBrowser Client="geltui", Device="geltui", DeviceId="geltui", Version="{}""#,
+        env!("CARGO_PKG_VERSION"),
     );
 
     if let Some(token) = token {
@@ -253,7 +252,7 @@ fn auth_header(token: Option<&str>) -> Result<String> {
     Ok(header)
 }
 
-fn format_runtime(ticks: u64) -> String {
+pub(crate) fn format_runtime(ticks: u64) -> String {
     let total_seconds = ticks / 10_000_000;
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
