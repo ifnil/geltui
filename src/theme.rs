@@ -38,7 +38,10 @@ impl Theme {
             dim: Style::default().add_modifier(Modifier::DIM),
             bold: Style::default().add_modifier(Modifier::BOLD),
             accent_bold: Style::default().fg(accent).add_modifier(Modifier::BOLD),
-            selection: Style::default().bg(selection_bg),
+            // remove DIM so selecting a dimmed (non-playable) row still reads as active
+            selection: Style::default()
+                .bg(selection_bg)
+                .remove_modifier(Modifier::DIM),
         }
     }
 }
