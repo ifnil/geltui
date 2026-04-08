@@ -102,11 +102,6 @@ impl Navigator {
         }
     }
 
-    #[allow(dead_code)] // consumed in Task 4 by ui::render
-    pub fn depth(&self) -> usize {
-        self.stack.len()
-    }
-
     /// The full navigation trail, root first, current last.
     pub fn trail(&self) -> &[BrowserState] {
         &self.stack

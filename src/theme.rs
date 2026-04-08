@@ -11,10 +11,6 @@ pub const BREADCRUMB_SEP: &str = " \u{203A} "; // " › "
 
 #[derive(Debug, Clone)]
 pub struct Theme {
-    #[allow(dead_code)] // retained for future ui uses; accent_bold carries the derived style
-    pub accent: Color,
-    #[allow(dead_code)] // retained for future ui uses; selection carries the derived style
-    pub selection_bg: Color,
     pub dim: Style,
     pub bold: Style,
     pub accent_bold: Style,
@@ -39,8 +35,6 @@ impl Theme {
         let selection_bg = Color::Indexed(237); // dark grey
 
         Self {
-            accent,
-            selection_bg,
             dim: Style::default().add_modifier(Modifier::DIM),
             bold: Style::default().add_modifier(Modifier::BOLD),
             accent_bold: Style::default().fg(accent).add_modifier(Modifier::BOLD),
