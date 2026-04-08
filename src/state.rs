@@ -108,7 +108,6 @@ impl Navigator {
     }
 
     /// The full navigation trail, root first, current last.
-    #[allow(dead_code)] // consumed in Task 4 by ui::breadcrumb
     pub fn trail(&self) -> &[BrowserState] {
         &self.stack
     }

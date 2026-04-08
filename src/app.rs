@@ -7,24 +7,20 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
-    Frame, Terminal,
+    Frame,
+    Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
-    text::{Line, Text},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
 
 use crate::{
     config::Config,
-    jellyfin::{MediaItem, Session},
+    jellyfin::Session,
     state::{BrowserState, Navigator},
 };
 
 pub struct App {
     config: Config,
     session: Session,
-    #[allow(dead_code)] // removed in Task 4
     theme: crate::theme::Theme,
     navigator: Navigator,
     status: String,
@@ -99,8 +95,8 @@ impl App {
     fn handle_key(&mut self, code: KeyCode) -> Result<bool> {
         match code {
             KeyCode::Char('q') => return Ok(true),
-            KeyCode::Down | KeyCode::Char('j') => self.current_mut().next(),
-            KeyCode::Up | KeyCode::Char('k') => self.current_mut().previous(),
+            KeyCode::Down | KeyCode::Char('j') => self.navigator.current_mut().next(),
+            KeyCode::Up | KeyCode::Char('k') => self.navigator.current_mut().previous(),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_selected()?,
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_back(),
             KeyCode::Char('r') => self.reload_current()?,
@@ -111,7 +107,7 @@ impl App {
     }
 
     fn open_selected(&mut self) -> Result<()> {
-        let Some(item) = self.current().selected_item() else {
+        let Some(item) = self.navigator.current().selected_item() else {
             self.status = "Nothing selected.".to_string();
             return Ok(());
         };
@@ -189,173 +185,6 @@ impl App {
     }
 
     fn render(&self, frame: &mut Frame) {
-        let current = self.current();
-
-        let [header, body, footer_area] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(8),
-                Constraint::Length(4),
-            ])
-            .areas(frame.area());
-
-        let [list_area, detail_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(46), Constraint::Percentage(54)])
-            .areas(body);
-
-        let title = Paragraph::new(current.title.clone())
-            .block(Block::default().borders(Borders::ALL).title("geltui"))
-            .style(Style::default().add_modifier(Modifier::BOLD));
-        frame.render_widget(title, header);
-
-        let is_season = current.is_season_view();
-        let items: Vec<ListItem> = current
-            .items
-            .iter()
-            .map(|item| {
-                let icon = if item.is_folder {
-                    ">"
-                } else if item.is_playable() {
-                    "*"
-                } else {
-                    "-"
-                };
-                let label = format_list_label(item, is_season);
-                ListItem::new(Line::from(format!("{icon} {label}")))
-            })
-            .collect();
-
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Browse"))
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
-            .highlight_symbol("> ");
-
-        let mut state = ListState::default();
-        if !current.items.is_empty() {
-            state.select(Some(current.selected));
-        }
-        frame.render_stateful_widget(list, list_area, &mut state);
-
-        let details = current
-            .selected_item()
-            .map(render_details)
-            .unwrap_or_else(|| {
-                Text::from(vec![
-                    Line::from("No items found."),
-                    Line::from(""),
-                    Line::from("Check the Jellyfin credentials and library visibility."),
-                ])
-            });
-
-        let detail = Paragraph::new(details)
-            .block(Block::default().borders(Borders::ALL).title("Details"))
-            .wrap(Wrap { trim: true });
-        frame.render_widget(detail, detail_area);
-
-        let footer_text = Text::from(vec![
-            Line::from(self.status.clone()),
-            Line::from("Enter open/play  h/backspace back  r reload  q quit"),
-        ]);
-        let footer = Paragraph::new(footer_text)
-            .block(Block::default().borders(Borders::ALL).title("Status"));
-        frame.render_widget(footer, footer_area);
+        crate::ui::render(frame, &self.navigator, &self.theme, &self.status);
     }
-
-    fn current(&self) -> &BrowserState {
-        self.navigator.current()
-    }
-
-    fn current_mut(&mut self) -> &mut BrowserState {
-        self.navigator.current_mut()
-    }
-}
-
-fn format_list_label(item: &MediaItem, is_season: bool) -> String {
-    if is_season
-        && let Some(ep) = item.index_number
-    {
-        return format!("{ep:02} \u{2014} {}", item.name);
-    }
-    item.name.clone()
-}
-
-fn render_details(item: &MediaItem) -> Text<'static> {
-    use std::fmt::Write;
-
-    let mut lines = vec![Line::from(item.name.clone())];
-
-    // Series/season line for episodes
-    if let Some(series) = &item.series_name {
-        let season_ep = match (item.parent_index_number, item.index_number) {
-            (Some(s), Some(e)) => format!("{series} \u{2014} Season {s}, Episode {e}"),
-            (None, Some(e)) => format!("{series} \u{2014} Episode {e}"),
-            _ => series.clone(),
-        };
-        lines.push(Line::from(season_ep));
-    }
-
-    lines.push(Line::from(""));
-
-    // Metadata line: official rating, community rating, year, child count, runtime
-    let mut meta = String::new();
-
-    if let Some(rating) = &item.official_rating {
-        meta.push_str(rating);
-    }
-
-    if let Some(score) = item.community_rating {
-        if !meta.is_empty() {
-            meta.push_str(" | ");
-        }
-        write!(meta, "\u{2605} {score:.1}").unwrap();
-    }
-
-    if let Some(yr) = item.production_year {
-        if !meta.is_empty() {
-            meta.push_str(" | ");
-        }
-        write!(meta, "{yr}").unwrap();
-    }
-
-    if let Some(count) = item.child_count {
-        if !meta.is_empty() {
-            meta.push_str(" | ");
-        }
-        write!(meta, "{count} items").unwrap();
-    }
-
-    if let Some(rt) = item.runtime_ticks {
-        if !meta.is_empty() {
-            meta.push_str(" | ");
-        }
-        meta.push_str(&crate::jellyfin::format_runtime(rt));
-    }
-
-    if !meta.is_empty() {
-        lines.push(Line::from(meta));
-    }
-
-    // Collection type (for library folders)
-    if let Some(ct) = &item.collection_type {
-        lines.push(Line::from(ct.clone()));
-    }
-
-    // Genres
-    if !item.genres.is_empty() {
-        lines.push(Line::from(item.genres.join(", ")));
-    }
-
-    lines.push(Line::from(""));
-
-    // Overview
-    match item.overview.as_deref() {
-        Some(overview) if !overview.trim().is_empty() => {
-            lines.push(Line::from(overview.to_string()))
-        }
-        _ => lines.push(Line::from("No overview available.")),
-    }
-
-    Text::from(lines)
 }

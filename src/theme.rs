@@ -4,19 +4,16 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::config::Config;
 
-#[allow(dead_code)] // used in Task 4 (ui::render)
 pub const FOLDER_ICON: &str = "\u{25B8}"; // ▸
-#[allow(dead_code)] // used in Task 4 (ui::render)
 pub const PLAYABLE_ICON: &str = "\u{25B6}"; // ▶
-#[allow(dead_code)] // used in Task 4 (ui::render)
 pub const OTHER_ICON: &str = "\u{00B7}"; // ·
-#[allow(dead_code)] // used in Task 4 (ui::render)
 pub const BREADCRUMB_SEP: &str = " \u{203A} "; // " › "
 
-#[allow(dead_code)] // fields read in Task 4 (ui::render)
 #[derive(Debug, Clone)]
 pub struct Theme {
+    #[allow(dead_code)] // retained for future ui uses; accent_bold carries the derived style
     pub accent: Color,
+    #[allow(dead_code)] // retained for future ui uses; selection carries the derived style
     pub selection_bg: Color,
     pub dim: Style,
     pub bold: Style,
@@ -137,7 +134,6 @@ pub fn parse_color(input: &str) -> Option<Color> {
 
 /// Truncate a string to `max_chars` Unicode scalar values, appending `…` if
 /// shortened. `max_chars == 0` returns an empty string.
-#[allow(dead_code)] // used in Task 4 (ui::render)
 pub fn truncate(s: &str, max_chars: usize) -> Cow<'_, str> {
     let len = s.chars().count();
     if len <= max_chars {
