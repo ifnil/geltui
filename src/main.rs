@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod jellyfin;
+mod theme;
 
 use anyhow::Result;
 use app::App;

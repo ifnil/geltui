@@ -14,7 +14,6 @@ pub struct Config {
     pub mpv_bin: Option<String>,
     pub mpv_args: Option<Vec<String>>,
     #[serde(default)]
-    #[allow(dead_code)]
     pub accent_color: Option<String>,
 }
 

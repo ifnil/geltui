@@ -23,6 +23,8 @@ use crate::{
 pub struct App {
     config: Config,
     session: Session,
+    #[allow(dead_code)] // removed in Task 4 when ui::render reads it
+    theme: crate::theme::Theme,
     stack: Vec<BrowserState>,
     status: String,
 }
@@ -38,9 +40,11 @@ struct BrowserState {
 impl App {
     pub fn new(config: Config, session: Session) -> Result<Self> {
         let root = session.fetch_root()?;
+        let theme = crate::theme::Theme::from_config(&config);
         Ok(Self {
             config,
             session,
+            theme,
             stack: vec![BrowserState::new(None, None, "Libraries".to_string(), root)],
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
         })
