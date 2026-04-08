@@ -18,34 +18,28 @@ use ratatui::{
 use crate::{
     config::Config,
     jellyfin::{MediaItem, Session},
+    state::{BrowserState, Navigator},
 };
 
 pub struct App {
     config: Config,
     session: Session,
-    #[allow(dead_code)] // removed in Task 4 when ui::render reads it
+    #[allow(dead_code)] // removed in Task 4
     theme: crate::theme::Theme,
-    stack: Vec<BrowserState>,
+    navigator: Navigator,
     status: String,
-}
-
-struct BrowserState {
-    parent_id: Option<String>,
-    parent_kind: Option<String>,
-    title: String,
-    items: Vec<MediaItem>,
-    selected: usize,
 }
 
 impl App {
     pub fn new(config: Config, session: Session) -> Result<Self> {
-        let root = session.fetch_root()?;
+        let root_items = session.fetch_root()?;
         let theme = crate::theme::Theme::from_config(&config);
+        let root = BrowserState::new(None, None, "Libraries".to_string(), root_items);
         Ok(Self {
             config,
             session,
             theme,
-            stack: vec![BrowserState::new(None, None, "Libraries".to_string(), root)],
+            navigator: Navigator::new(root),
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
         })
     }
@@ -130,7 +124,7 @@ impl App {
 
         if is_folder {
             let items = self.session.fetch_children(&id)?;
-            self.stack
+            self.navigator
                 .push(BrowserState::new(Some(id), Some(kind), name, items));
             self.status = "Loaded folder.".to_string();
             return Ok(());
@@ -167,24 +161,29 @@ impl App {
     }
 
     fn reload_current(&mut self) -> Result<()> {
-        let refreshed = match self.current().parent_id.as_deref() {
+        let refreshed = match self.navigator.current().parent_id.as_deref() {
             Some(parent_id) => self.session.fetch_children(parent_id)?,
             None => self.session.fetch_root()?,
         };
 
-        let current = self.current_mut();
+        let current = self.navigator.current();
         let parent_id = current.parent_id.clone();
         let parent_kind = current.parent_kind.clone();
         let title = current.title.clone();
         let selected = current.selected;
-        *current = BrowserState::with_selection(parent_id, parent_kind, title, refreshed, selected);
+        self.navigator.replace_current(BrowserState::with_selection(
+            parent_id,
+            parent_kind,
+            title,
+            refreshed,
+            selected,
+        ));
         self.status = "Reloaded view.".to_string();
         Ok(())
     }
 
     fn go_back(&mut self) {
-        if self.stack.len() > 1 {
-            self.stack.pop();
+        if self.navigator.pop() {
             self.status = "Returned to previous view.".to_string();
         }
     }
@@ -265,72 +264,11 @@ impl App {
     }
 
     fn current(&self) -> &BrowserState {
-        self.stack
-            .last()
-            .expect("app must always keep at least one browser state")
+        self.navigator.current()
     }
 
     fn current_mut(&mut self) -> &mut BrowserState {
-        self.stack
-            .last_mut()
-            .expect("app must always keep at least one browser state")
-    }
-}
-
-impl BrowserState {
-    fn new(
-        parent_id: Option<String>,
-        parent_kind: Option<String>,
-        title: String,
-        items: Vec<MediaItem>,
-    ) -> Self {
-        Self::with_selection(parent_id, parent_kind, title, items, 0)
-    }
-
-    fn with_selection(
-        parent_id: Option<String>,
-        parent_kind: Option<String>,
-        title: String,
-        items: Vec<MediaItem>,
-        selected: usize,
-    ) -> Self {
-        let selected = if items.is_empty() {
-            0
-        } else {
-            selected.min(items.len().saturating_sub(1))
-        };
-
-        Self {
-            parent_id,
-            parent_kind,
-            title,
-            items,
-            selected,
-        }
-    }
-
-    fn is_season_view(&self) -> bool {
-        self.parent_kind.as_deref() == Some("Season")
-    }
-
-    fn next(&mut self) {
-        if self.items.is_empty() {
-            return;
-        }
-
-        self.selected = (self.selected + 1).min(self.items.len() - 1);
-    }
-
-    fn previous(&mut self) {
-        if self.items.is_empty() {
-            return;
-        }
-
-        self.selected = self.selected.saturating_sub(1);
-    }
-
-    fn selected_item(&self) -> Option<&MediaItem> {
-        self.items.get(self.selected)
+        self.navigator.current_mut()
     }
 }
 
