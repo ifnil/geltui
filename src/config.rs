@@ -13,6 +13,9 @@ pub struct Config {
     pub user_id: Option<String>,
     pub mpv_bin: Option<String>,
     pub mpv_args: Option<Vec<String>>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub accent_color: Option<String>,
 }
 
 impl Config {
