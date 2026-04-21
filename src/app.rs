@@ -100,10 +100,64 @@ impl App {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_selected()?,
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_back(),
             KeyCode::Char('r') => self.reload_current()?,
+            KeyCode::Char('s') => self.shuffle_selected()?,
             _ => {}
         }
 
         Ok(false)
+    }
+
+    fn shuffle_selected(&mut self) -> Result<()> {
+        let current = self.navigator.current();
+        let series_id = if let Some(item) = current.selected_item()
+            && item.kind == "Series"
+        {
+            Some(item.id.clone())
+        } else if current.parent_kind.as_deref() == Some("Series") {
+            current.parent_id.clone()
+        } else {
+            None
+        };
+
+        let Some(series_id) = series_id else {
+            self.status = "Select a show (or open one) to shuffle.".to_string();
+            return Ok(());
+        };
+
+        let episodes = self.session.fetch_shuffled_episodes(&series_id, 100)?;
+        if episodes.is_empty() {
+            self.status = "No episodes found to shuffle.".to_string();
+            return Ok(());
+        }
+
+        let urls: Vec<String> = episodes
+            .iter()
+            .map(|ep| self.session.playback_url(&ep.id))
+            .collect::<Result<_>>()?;
+
+        let auth_token = self.session.auth_token().to_string();
+        let mpv_bin = self.config.mpv_bin.as_deref().unwrap_or("mpv");
+        let mut command = Command::new(mpv_bin);
+
+        command.arg(format!(
+            "--http-header-fields=X-MediaBrowser-Token: {auth_token}"
+        ));
+
+        if let Some(extra_args) = self.config.mpv_args.as_deref() {
+            command.args(extra_args);
+        }
+
+        let count = urls.len();
+        let mut child = command.args(urls).spawn().with_context(|| {
+            format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
+        })?;
+
+        thread::spawn(move || {
+            let _ = child.wait();
+        });
+
+        self.status = format!("Shuffling {count} episodes in MPV.");
+        Ok(())
     }
 
     fn open_selected(&mut self) -> Result<()> {

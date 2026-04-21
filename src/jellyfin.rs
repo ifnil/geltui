@@ -132,6 +132,38 @@ impl Session {
         Ok(payload.items)
     }
 
+    pub fn fetch_shuffled_episodes(
+        &self,
+        series_id: &str,
+        limit: u32,
+    ) -> Result<Vec<MediaItem>> {
+        let url = format!("{}/Users/{}/Items", self.server_url, self.user_id);
+        let limit = limit.to_string();
+        let response = self
+            .client
+            .get(url)
+            .query(&[
+                ("ParentId", series_id),
+                ("Recursive", "true"),
+                ("IncludeItemTypes", "Episode"),
+                ("SortBy", "Random"),
+                ("Limit", limit.as_str()),
+                (
+                    "Fields",
+                    "Overview,ProductionYear,RunTimeTicks,MediaType,Genres",
+                ),
+            ])
+            .send()
+            .context("failed to request shuffled episodes")?
+            .error_for_status()
+            .context("Jellyfin rejected the shuffle request")?;
+
+        let payload: ItemQueryResult = response
+            .json()
+            .context("failed to decode shuffled episode response")?;
+        Ok(payload.items)
+    }
+
     pub fn playback_url(&self, item_id: &str) -> Result<String> {
         let mut url = Url::parse(&format!("{}/Items/{item_id}/Download", self.server_url))
             .context("failed to build playback URL")?;

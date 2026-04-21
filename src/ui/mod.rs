@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{state::Navigator, theme::Theme};
 
-const HOTKEY_HINTS: &str = "Enter open  h back  r reload  q quit";
+const HOTKEY_HINTS: &str = "Enter open  h back  s shuffle  r reload  q quit";
 
 pub fn render(frame: &mut Frame, navigator: &Navigator, theme: &Theme, status: &str) {
     let area = frame.area();
