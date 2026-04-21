@@ -29,7 +29,7 @@ pub fn render(
             let line = Line::from(format!("{icon} {label}"));
             let list_item = ListItem::new(line);
             if !item.is_folder && !item.is_playable() {
-                list_item.style(theme.dim)
+                list_item.style(theme.muted)
             } else {
                 list_item
             }

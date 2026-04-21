@@ -44,7 +44,11 @@ pub struct ThemeConfig {
     pub terminal_colors: bool,
     pub selection_bg: Option<String>,
     pub selection_fg: Option<String>,
-    pub dim_fg: Option<String>,
+    pub muted_fg: Option<String>,
+    pub title_fg: Option<String>,
+    pub hint_fg: Option<String>,
+    pub description_fg: Option<String>,
+    pub breadcrumb_current_fg: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

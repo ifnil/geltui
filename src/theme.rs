@@ -11,9 +11,18 @@ pub const BREADCRUMB_SEP: &str = " \u{203A} "; // " › "
 
 #[derive(Debug, Clone)]
 pub struct Theme {
-    pub dim: Style,
-    pub bold: Style,
-    pub accent_bold: Style,
+    /// Secondary/muted text: breadcrumb separators, non-playable rows,
+    /// metadata subtitles, placeholders.
+    pub muted: Style,
+    /// Item title (e.g. details panel heading).
+    pub title: Style,
+    /// Footer help text.
+    pub hint: Style,
+    /// Description body text (overview paragraphs).
+    pub description: Style,
+    /// Current breadcrumb segment.
+    pub breadcrumb_current: Style,
+    /// Selected list row.
     pub selection: Style,
 }
 
@@ -39,18 +48,45 @@ impl Theme {
             selection = selection.fg(fg);
         }
 
-        let mut dim = Style::default().add_modifier(Modifier::DIM);
-        if let Some(fg) = resolve_color(theme.dim_fg.as_deref(), "theme.dim_fg") {
-            dim = dim.fg(fg);
-        }
+        // Roles default to DIM (for muted-ish roles) or BOLD (for titles). Any
+        // configured fg overrides the terminal's default foreground.
+        let muted = style_with(Modifier::DIM, theme.muted_fg.as_deref(), "theme.muted_fg");
+        let title = style_with(Modifier::BOLD, theme.title_fg.as_deref(), "theme.title_fg");
+        let hint = style_with(Modifier::DIM, theme.hint_fg.as_deref(), "theme.hint_fg");
+        let description = style_with(
+            Modifier::empty(),
+            theme.description_fg.as_deref(),
+            "theme.description_fg",
+        );
+        let breadcrumb_accent = theme
+            .breadcrumb_current_fg
+            .as_deref()
+            .and_then(|raw| resolve_color(Some(raw), "theme.breadcrumb_current_fg"))
+            .unwrap_or(accent);
+        let breadcrumb_current = Style::default()
+            .fg(breadcrumb_accent)
+            .add_modifier(Modifier::BOLD);
 
         Self {
-            dim,
-            bold: Style::default().add_modifier(Modifier::BOLD),
-            accent_bold: Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            muted,
+            title,
+            hint,
+            description,
+            breadcrumb_current,
             selection,
         }
     }
+}
+
+fn style_with(modifier: Modifier, fg_raw: Option<&str>, field: &str) -> Style {
+    let mut style = Style::default();
+    if !modifier.is_empty() {
+        style = style.add_modifier(modifier);
+    }
+    if let Some(fg) = resolve_color(fg_raw, field) {
+        style = style.fg(fg);
+    }
+    style
 }
 
 fn resolve_color(value: Option<&str>, field: &str) -> Option<Color> {

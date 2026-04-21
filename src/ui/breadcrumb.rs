@@ -31,10 +31,10 @@ fn build_spans(segments: &[&str], max_width: usize, theme: &Theme) -> Vec<Span<'
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(shortened.len() * 2);
     for (i, seg) in shortened.into_iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled(BREADCRUMB_SEP.to_string(), theme.dim));
+            spans.push(Span::styled(BREADCRUMB_SEP.to_string(), theme.muted));
         }
         let style = if i == last_idx {
-            theme.accent_bold
+            theme.breadcrumb_current
         } else {
             Style::default()
         };

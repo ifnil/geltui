@@ -13,11 +13,11 @@ pub fn render(frame: &mut Frame, area: Rect, item: Option<&MediaItem>, theme: &T
     let text = match item {
         Some(item) => build_text(item, theme),
         None => Text::from(vec![
-            Line::from(Span::styled("No items found.", theme.dim)),
+            Line::from(Span::styled("No items found.", theme.muted)),
             Line::from(""),
             Line::from(Span::styled(
                 "Check the Jellyfin credentials and library visibility.",
-                theme.dim,
+                theme.muted,
             )),
         ]),
     };
@@ -30,7 +30,7 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // Title
-    lines.push(Line::from(Span::styled(item.name.clone(), theme.bold)));
+    lines.push(Line::from(Span::styled(item.name.clone(), theme.title)));
 
     // Series/season/episode
     if let Some(series) = &item.series_name {
@@ -39,7 +39,7 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
             (None, Some(e)) => format!("{series} \u{2014} Episode {e}"),
             _ => series.clone(),
         };
-        lines.push(Line::from(Span::styled(season_ep, theme.dim)));
+        lines.push(Line::from(Span::styled(season_ep, theme.muted)));
     }
 
     lines.push(Line::from(""));
@@ -79,12 +79,12 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
 
     // Collection type
     if let Some(ct) = &item.collection_type {
-        lines.push(Line::from(Span::styled(ct.clone(), theme.dim)));
+        lines.push(Line::from(Span::styled(ct.clone(), theme.muted)));
     }
 
     // Genres
     if !item.genres.is_empty() {
-        lines.push(Line::from(Span::styled(item.genres.join(", "), theme.dim)));
+        lines.push(Line::from(Span::styled(item.genres.join(", "), theme.muted)));
     }
 
     lines.push(Line::from(""));
@@ -92,12 +92,12 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
     // Overview
     match item.overview.as_deref() {
         Some(overview) if !overview.trim().is_empty() => {
-            lines.push(Line::from(overview.to_string()));
+            lines.push(Line::from(Span::styled(overview.to_string(), theme.description)));
         }
         _ => {
             lines.push(Line::from(Span::styled(
                 "No overview available.",
-                theme.dim,
+                theme.muted,
             )));
         }
     }

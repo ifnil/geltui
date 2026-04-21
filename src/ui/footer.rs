@@ -38,7 +38,7 @@ pub fn render(frame: &mut Frame, area: Rect, status: &str, hints: &str, theme: &
     let spans = vec![
         Span::raw(status_final),
         Span::raw(gap_str),
-        Span::styled(hints_final, theme.dim),
+        Span::styled(hints_final, theme.hint),
     ];
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
