@@ -67,6 +67,9 @@ pub struct App {
     list_area: Rect,
     modal: Option<Modal>,
     autoplay_next: bool,
+    /// Set when something external (e.g. mpv) may have corrupted the terminal
+    /// so the next frame must be fully redrawn.
+    needs_full_redraw: bool,
 }
 
 impl App {
@@ -85,6 +88,7 @@ impl App {
             list_area: Rect::default(),
             modal: None,
             autoplay_next,
+            needs_full_redraw: false,
         })
     }
 
@@ -122,6 +126,11 @@ impl App {
 
     fn run_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         loop {
+            if self.needs_full_redraw {
+                terminal.clear().context("failed to clear terminal")?;
+                self.needs_full_redraw = false;
+            }
+
             terminal
                 .draw(|frame| self.render(frame))
                 .context("failed to render terminal frame")?;
@@ -333,6 +342,7 @@ impl App {
             let _ = child.wait();
         });
 
+        self.needs_full_redraw = true;
         self.status = format!("Shuffling {count} episodes in MPV.");
         Ok(())
     }
@@ -398,6 +408,7 @@ impl App {
             let _ = child.wait();
         });
 
+        self.needs_full_redraw = true;
         self.status = if queued_after > 0 {
             format!("Playing `{name}` in MPV (+{queued_after} queued).")
         } else {
