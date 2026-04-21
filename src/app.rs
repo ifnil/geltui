@@ -26,7 +26,34 @@ use crate::{
     config::Config,
     jellyfin::Session,
     state::{BrowserState, Navigator},
+    ui::menu::Menu,
 };
+
+enum Modal {
+    Help,
+    Context { menu: Menu, actions: Vec<ContextAction> },
+}
+
+#[derive(Debug, Clone)]
+enum ContextAction {
+    ToggleWatched(String, bool), // item id, current played state
+    ToggleFavorite(String, bool),
+    Shuffle,
+    Close,
+}
+
+const HELP_LINES: &[(&str, &str)] = &[
+    ("j / \u{2193}", "next item"),
+    ("k / \u{2191}", "previous item"),
+    ("l / \u{2192} / Enter", "open / play"),
+    ("h / \u{2190} / Backspace", "back"),
+    ("s", "shuffle show"),
+    ("m", "item menu"),
+    ("r", "reload view"),
+    ("?", "toggle help"),
+    ("q / Ctrl-C", "quit"),
+    ("Esc", "close menu"),
+];
 
 pub struct App {
     config: Config,
@@ -36,6 +63,7 @@ pub struct App {
     status: String,
     list_state: ListState,
     list_area: Rect,
+    modal: Option<Modal>,
 }
 
 impl App {
@@ -51,6 +79,7 @@ impl App {
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
             list_state: ListState::default(),
             list_area: Rect::default(),
+            modal: None,
         })
     }
 
@@ -116,6 +145,10 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode) -> Result<bool> {
+        if self.modal.is_some() {
+            return self.handle_modal_key(code);
+        }
+
         match code {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Down | KeyCode::Char('j') => self.navigator.current_mut().next(),
@@ -124,10 +157,108 @@ impl App {
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_back(),
             KeyCode::Char('r') => self.reload_current()?,
             KeyCode::Char('s') => self.shuffle_selected()?,
+            KeyCode::Char('?') => self.modal = Some(Modal::Help),
+            KeyCode::Char('m') => self.open_context_menu(),
             _ => {}
         }
 
         Ok(false)
+    }
+
+    fn handle_modal_key(&mut self, code: KeyCode) -> Result<bool> {
+        let Some(modal) = self.modal.as_mut() else {
+            return Ok(false);
+        };
+
+        match modal {
+            Modal::Help => match code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => self.modal = None,
+                _ => {}
+            },
+            Modal::Context { menu, actions } => match code {
+                KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('q') => self.modal = None,
+                KeyCode::Down | KeyCode::Char('j') => menu.next(),
+                KeyCode::Up | KeyCode::Char('k') => menu.previous(),
+                KeyCode::Enter => {
+                    let action = actions.get(menu.selected).cloned();
+                    self.modal = None;
+                    if let Some(action) = action {
+                        self.apply_context_action(action)?;
+                    }
+                }
+                _ => {}
+            },
+        }
+
+        Ok(false)
+    }
+
+    fn open_context_menu(&mut self) {
+        let Some(item) = self.navigator.current().selected_item() else {
+            self.status = "Nothing selected.".to_string();
+            return;
+        };
+
+        let mut entries: Vec<String> = Vec::new();
+        let mut actions: Vec<ContextAction> = Vec::new();
+
+        let played = item.user_data.played;
+        entries.push(if played {
+            "Mark unwatched".to_string()
+        } else {
+            "Mark watched".to_string()
+        });
+        actions.push(ContextAction::ToggleWatched(item.id.clone(), played));
+
+        let fav = item.user_data.is_favorite;
+        entries.push(if fav {
+            "Remove from favorites".to_string()
+        } else {
+            "Add to favorites".to_string()
+        });
+        actions.push(ContextAction::ToggleFavorite(item.id.clone(), fav));
+
+        if item.kind == "Series" {
+            entries.push("Shuffle episodes".to_string());
+            actions.push(ContextAction::Shuffle);
+        }
+
+        entries.push("Cancel".to_string());
+        actions.push(ContextAction::Close);
+
+        let title = format!("{}  ({})", item.name, item.kind);
+        self.modal = Some(Modal::Context {
+            menu: Menu::new(title, entries),
+            actions,
+        });
+    }
+
+    fn apply_context_action(&mut self, action: ContextAction) -> Result<()> {
+        match action {
+            ContextAction::ToggleWatched(id, was_played) => {
+                self.session.set_watched(&id, !was_played)?;
+                self.status = if was_played {
+                    "Marked unwatched.".to_string()
+                } else {
+                    "Marked watched.".to_string()
+                };
+                self.reload_current()?;
+            }
+            ContextAction::ToggleFavorite(id, was_fav) => {
+                self.session.set_favorite(&id, !was_fav)?;
+                self.status = if was_fav {
+                    "Removed from favorites.".to_string()
+                } else {
+                    "Added to favorites.".to_string()
+                };
+                self.reload_current()?;
+            }
+            ContextAction::Shuffle => {
+                self.shuffle_selected()?;
+            }
+            ContextAction::Close => {}
+        }
+        Ok(())
     }
 
     fn shuffle_selected(&mut self) -> Result<()> {
@@ -286,9 +417,20 @@ impl App {
             &mut self.list_state,
         );
         self.list_area = areas.list;
+
+        match &self.modal {
+            Some(Modal::Help) => crate::ui::menu::render_help(frame, HELP_LINES, &self.theme),
+            Some(Modal::Context { menu, .. }) => {
+                crate::ui::menu::render_menu(frame, menu, &self.theme);
+            }
+            None => {}
+        }
     }
 
     fn handle_mouse(&mut self, event: MouseEvent) -> Result<()> {
+        if self.modal.is_some() {
+            return Ok(());
+        }
         let col = event.column;
         let row = event.row;
         let in_list = col >= self.list_area.x
@@ -313,6 +455,15 @@ impl App {
                     if was_selected {
                         self.open_selected()?;
                     }
+                }
+            }
+            MouseEventKind::Down(MouseButton::Right) if in_list => {
+                let offset = self.list_state.offset();
+                let row_idx = offset + (row - self.list_area.y) as usize;
+                let state = self.navigator.current_mut();
+                if row_idx < state.items.len() {
+                    state.selected = row_idx;
+                    self.open_context_menu();
                 }
             }
             _ => {}

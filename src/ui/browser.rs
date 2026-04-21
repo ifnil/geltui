@@ -57,10 +57,22 @@ fn icon_for(item: &MediaItem) -> &'static str {
 }
 
 fn format_label(item: &MediaItem, is_season: bool) -> String {
-    if is_season
+    let base = if is_season
         && let Some(ep) = item.index_number
     {
-        return format!("{ep:02} \u{2014} {}", item.name);
+        format!("{ep:02} \u{2014} {}", item.name)
+    } else {
+        item.name.clone()
+    };
+
+    let mut marks = String::new();
+    if item.user_data.is_favorite {
+        marks.push(' ');
+        marks.push('\u{2605}'); // ★
     }
-    item.name.clone()
+    if item.user_data.played {
+        marks.push(' ');
+        marks.push('\u{2713}'); // ✓
+    }
+    format!("{base}{marks}")
 }

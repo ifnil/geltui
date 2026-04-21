@@ -2,6 +2,7 @@ mod breadcrumb;
 mod browser;
 mod details;
 mod footer;
+pub mod menu;
 
 use ratatui::{
     Frame,
@@ -11,7 +12,7 @@ use ratatui::{
 
 use crate::{state::Navigator, theme::Theme};
 
-const HOTKEY_HINTS: &str = "Enter open  h back  s shuffle  r reload  q quit";
+const HOTKEY_HINTS: &str = "Enter open  h back  m menu  ? help  q quit";
 
 pub struct Areas {
     pub breadcrumb: Rect,

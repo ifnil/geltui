@@ -52,6 +52,16 @@ pub struct MediaItem {
     pub official_rating: Option<String>,
     #[serde(rename = "Genres", default)]
     pub genres: Vec<String>,
+    #[serde(rename = "UserData", default)]
+    pub user_data: UserData,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UserData {
+    #[serde(rename = "Played", default)]
+    pub played: bool,
+    #[serde(rename = "IsFavorite", default)]
+    pub is_favorite: bool,
 }
 
 impl MediaItem {
@@ -118,7 +128,7 @@ impl Session {
                 ("SortOrder", "Ascending"),
                 (
                     "Fields",
-                    "Overview,ChildCount,ProductionYear,RunTimeTicks,MediaType,CollectionType,Genres",
+                    "Overview,ChildCount,ProductionYear,RunTimeTicks,MediaType,CollectionType,Genres,UserData",
                 ),
             ])
             .send()
@@ -150,7 +160,7 @@ impl Session {
                 ("Limit", limit.as_str()),
                 (
                     "Fields",
-                    "Overview,ProductionYear,RunTimeTicks,MediaType,Genres",
+                    "Overview,ProductionYear,RunTimeTicks,MediaType,Genres,UserData",
                 ),
             ])
             .send()
@@ -173,6 +183,42 @@ impl Session {
 
     pub fn auth_token(&self) -> &str {
         &self.auth_token
+    }
+
+    pub fn set_watched(&self, item_id: &str, watched: bool) -> Result<()> {
+        let url = format!(
+            "{}/Users/{}/PlayedItems/{item_id}",
+            self.server_url, self.user_id
+        );
+        let request = if watched {
+            self.client.post(url)
+        } else {
+            self.client.delete(url)
+        };
+        request
+            .send()
+            .context("failed to toggle watched state")?
+            .error_for_status()
+            .context("Jellyfin rejected the watched-state update")?;
+        Ok(())
+    }
+
+    pub fn set_favorite(&self, item_id: &str, favorite: bool) -> Result<()> {
+        let url = format!(
+            "{}/Users/{}/FavoriteItems/{item_id}",
+            self.server_url, self.user_id
+        );
+        let request = if favorite {
+            self.client.post(url)
+        } else {
+            self.client.delete(url)
+        };
+        request
+            .send()
+            .context("failed to toggle favorite state")?
+            .error_for_status()
+            .context("Jellyfin rejected the favorite-state update")?;
+        Ok(())
     }
 }
 
