@@ -1,4 +1,9 @@
-use std::{io, process::Command, thread, time::Duration};
+use std::{
+    io,
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -147,10 +152,20 @@ impl App {
             command.args(extra_args);
         }
 
+        if self.config.mpv_ontop {
+            command.arg("--ontop");
+        }
+
         let count = urls.len();
-        let mut child = command.args(urls).spawn().with_context(|| {
-            format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
-        })?;
+        let mut child = command
+            .args(urls)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .with_context(|| {
+                format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
+            })?;
 
         thread::spawn(move || {
             let _ = child.wait();
@@ -198,9 +213,19 @@ impl App {
             command.args(extra_args);
         }
 
-        let mut child = command.arg(url).spawn().with_context(|| {
-            format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
-        })?;
+        if self.config.mpv_ontop {
+            command.arg("--ontop");
+        }
+
+        let mut child = command
+            .arg(url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .with_context(|| {
+                format!("failed to launch `{mpv_bin}`; set `mpv_bin` in config if needed")
+            })?;
 
         thread::spawn(move || {
             let _ = child.wait();

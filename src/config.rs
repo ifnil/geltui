@@ -14,7 +14,11 @@ pub struct Config {
     pub mpv_bin: Option<String>,
     pub mpv_args: Option<Vec<String>>,
     #[serde(default)]
+    pub mpv_ontop: bool,
+    #[serde(default)]
     pub accent_color: Option<String>,
+    #[serde(default)]
+    pub terminal_colors: bool,
 }
 
 impl Config {

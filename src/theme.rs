@@ -32,16 +32,23 @@ impl Theme {
                 Color::Cyan
             });
 
-        let selection_bg = Color::Indexed(237); // dark grey
+        // Terminal-colors mode uses reverse-video so selection inherits the
+        // terminal's fg/bg and stays legible on both light and dark themes.
+        let selection = if config.terminal_colors {
+            Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .remove_modifier(Modifier::DIM)
+        } else {
+            Style::default()
+                .bg(Color::Indexed(237))
+                .remove_modifier(Modifier::DIM)
+        };
 
         Self {
             dim: Style::default().add_modifier(Modifier::DIM),
             bold: Style::default().add_modifier(Modifier::BOLD),
             accent_bold: Style::default().fg(accent).add_modifier(Modifier::BOLD),
-            // remove DIM so selecting a dimmed (non-playable) row still reads as active
-            selection: Style::default()
-                .bg(selection_bg)
-                .remove_modifier(Modifier::DIM),
+            selection,
         }
     }
 }
