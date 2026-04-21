@@ -42,6 +42,8 @@ pub struct MediaItem {
     pub collection_type: Option<String>,
     #[serde(rename = "SeriesName")]
     pub series_name: Option<String>,
+    #[serde(rename = "SeriesId")]
+    pub series_id: Option<String>,
     #[serde(rename = "IndexNumber")]
     pub index_number: Option<u32>,
     #[serde(rename = "ParentIndexNumber")]
@@ -183,6 +185,27 @@ impl Session {
 
     pub fn auth_token(&self) -> &str {
         &self.auth_token
+    }
+
+    /// Returns all episodes in a series, sorted by season + episode index.
+    pub fn fetch_series_episodes(&self, series_id: &str) -> Result<Vec<MediaItem>> {
+        let url = format!("{}/Shows/{series_id}/Episodes", self.server_url);
+        let response = self
+            .client
+            .get(url)
+            .query(&[
+                ("UserId", self.user_id.as_str()),
+                ("Fields", "MediaType"),
+            ])
+            .send()
+            .context("failed to request series episodes")?
+            .error_for_status()
+            .context("Jellyfin rejected the series-episodes request")?;
+
+        let payload: ItemQueryResult = response
+            .json()
+            .context("failed to decode series-episodes response")?;
+        Ok(payload.items)
     }
 
     pub fn set_watched(&self, item_id: &str, watched: bool) -> Result<()> {

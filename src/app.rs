@@ -39,6 +39,7 @@ enum ContextAction {
     ToggleWatched(String, bool), // item id, current played state
     ToggleFavorite(String, bool),
     Shuffle,
+    ToggleAutoplay,
     Close,
 }
 
@@ -49,6 +50,7 @@ const HELP_LINES: &[(&str, &str)] = &[
     ("h / \u{2190} / Backspace", "back"),
     ("s", "shuffle show"),
     ("m", "item menu"),
+    ("n", "toggle autoplay next episode"),
     ("r", "reload view"),
     ("?", "toggle help"),
     ("q / Ctrl-C", "quit"),
@@ -64,6 +66,7 @@ pub struct App {
     list_state: ListState,
     list_area: Rect,
     modal: Option<Modal>,
+    autoplay_next: bool,
 }
 
 impl App {
@@ -71,6 +74,7 @@ impl App {
         let root_items = session.fetch_root()?;
         let theme = crate::theme::Theme::from_config(&config);
         let root = BrowserState::new(None, None, "Libraries".to_string(), root_items);
+        let autoplay_next = config.general.autoplay_next;
         Ok(Self {
             config,
             session,
@@ -80,6 +84,7 @@ impl App {
             list_state: ListState::default(),
             list_area: Rect::default(),
             modal: None,
+            autoplay_next,
         })
     }
 
@@ -159,6 +164,7 @@ impl App {
             KeyCode::Char('s') => self.shuffle_selected()?,
             KeyCode::Char('?') => self.modal = Some(Modal::Help),
             KeyCode::Char('m') => self.open_context_menu(),
+            KeyCode::Char('n') => self.toggle_autoplay(),
             _ => {}
         }
 
@@ -223,6 +229,12 @@ impl App {
             actions.push(ContextAction::Shuffle);
         }
 
+        entries.push(format!(
+            "Autoplay next: {}",
+            if self.autoplay_next { "on" } else { "off" }
+        ));
+        actions.push(ContextAction::ToggleAutoplay);
+
         entries.push("Cancel".to_string());
         actions.push(ContextAction::Close);
 
@@ -255,6 +267,9 @@ impl App {
             }
             ContextAction::Shuffle => {
                 self.shuffle_selected()?;
+            }
+            ContextAction::ToggleAutoplay => {
+                self.toggle_autoplay();
             }
             ContextAction::Close => {}
         }
@@ -347,7 +362,14 @@ impl App {
             return Ok(());
         }
 
-        let url = self.session.playback_url(&id)?;
+        // Build playlist. For Episode + autoplay_next, queue this episode and
+        // every subsequent one in the series.
+        let (urls, queued_after) = if self.autoplay_next && kind == "Episode" {
+            self.build_episode_queue(&id, item.series_id.as_deref())?
+        } else {
+            (vec![self.session.playback_url(&id)?], 0)
+        };
+
         let auth_token = self.session.auth_token().to_string();
         let mpv_bin = self.config.mpv.bin.as_deref().unwrap_or("mpv");
         let mut command = Command::new(mpv_bin);
@@ -363,7 +385,7 @@ impl App {
         }
 
         let mut child = command
-            .arg(url)
+            .args(urls)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -376,8 +398,46 @@ impl App {
             let _ = child.wait();
         });
 
-        self.status = format!("Playing `{name}` in MPV.");
+        self.status = if queued_after > 0 {
+            format!("Playing `{name}` in MPV (+{queued_after} queued).")
+        } else {
+            format!("Playing `{name}` in MPV.")
+        };
         Ok(())
+    }
+
+    /// Return (urls, count_queued_after_current). Falls back to a single-URL
+    /// playlist if the series lookup fails or yields nothing past the current
+    /// episode.
+    fn build_episode_queue(
+        &self,
+        episode_id: &str,
+        series_id: Option<&str>,
+    ) -> Result<(Vec<String>, usize)> {
+        let Some(series_id) = series_id else {
+            return Ok((vec![self.session.playback_url(episode_id)?], 0));
+        };
+
+        let episodes = match self.session.fetch_series_episodes(series_id) {
+            Ok(list) => list,
+            Err(_) => return Ok((vec![self.session.playback_url(episode_id)?], 0)),
+        };
+
+        let start = episodes
+            .iter()
+            .position(|e| e.id == episode_id)
+            .unwrap_or(0);
+        let queue: Vec<_> = episodes.iter().skip(start).collect();
+        if queue.is_empty() {
+            return Ok((vec![self.session.playback_url(episode_id)?], 0));
+        }
+
+        let urls = queue
+            .iter()
+            .map(|e| self.session.playback_url(&e.id))
+            .collect::<Result<Vec<_>>>()?;
+        let queued_after = urls.len().saturating_sub(1);
+        Ok((urls, queued_after))
     }
 
     fn reload_current(&mut self) -> Result<()> {
@@ -406,6 +466,14 @@ impl App {
         if self.navigator.pop() {
             self.status = "Returned to previous view.".to_string();
         }
+    }
+
+    fn toggle_autoplay(&mut self) {
+        self.autoplay_next = !self.autoplay_next;
+        self.status = format!(
+            "Autoplay next episode: {}.",
+            if self.autoplay_next { "on" } else { "off" }
+        );
     }
 
     fn render(&mut self, frame: &mut Frame) {

@@ -24,11 +24,16 @@ pub struct Config {
 pub struct GeneralConfig {
     #[serde(default = "default_true")]
     pub mouse: bool,
+    #[serde(default = "default_true")]
+    pub autoplay_next: bool,
 }
 
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { mouse: true }
+        Self {
+            mouse: true,
+            autoplay_next: true,
+        }
     }
 }
 
