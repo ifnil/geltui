@@ -19,36 +19,47 @@ pub struct Theme {
 
 impl Theme {
     pub fn from_config(config: &Config) -> Self {
-        let accent = config
-            .accent_color
-            .as_deref()
-            .and_then(parse_color)
-            .unwrap_or_else(|| {
-                if let Some(raw) = config.accent_color.as_deref() {
-                    eprintln!(
-                        "geltui: unrecognized accent_color `{raw}`, using default (cyan)"
-                    );
-                }
-                Color::Cyan
-            });
+        let theme = &config.theme;
+        let accent = resolve_color(theme.accent.as_deref(), "theme.accent").unwrap_or(Color::Cyan);
 
         // Terminal-colors mode uses reverse-video so selection inherits the
         // terminal's fg/bg and stays legible on both light and dark themes.
-        let selection = if config.terminal_colors {
-            Style::default()
-                .add_modifier(Modifier::REVERSED)
-                .remove_modifier(Modifier::DIM)
+        // Explicit selection_bg/selection_fg always win over the default bg
+        // but don't override the reverse-video flag.
+        let mut selection = Style::default().remove_modifier(Modifier::DIM);
+        if theme.terminal_colors {
+            selection = selection.add_modifier(Modifier::REVERSED);
+        } else if let Some(bg) = resolve_color(theme.selection_bg.as_deref(), "theme.selection_bg")
+        {
+            selection = selection.bg(bg);
         } else {
-            Style::default()
-                .bg(Color::Indexed(237))
-                .remove_modifier(Modifier::DIM)
-        };
+            selection = selection.bg(Color::Indexed(237));
+        }
+        if let Some(fg) = resolve_color(theme.selection_fg.as_deref(), "theme.selection_fg") {
+            selection = selection.fg(fg);
+        }
+
+        let mut dim = Style::default().add_modifier(Modifier::DIM);
+        if let Some(fg) = resolve_color(theme.dim_fg.as_deref(), "theme.dim_fg") {
+            dim = dim.fg(fg);
+        }
 
         Self {
-            dim: Style::default().add_modifier(Modifier::DIM),
+            dim,
             bold: Style::default().add_modifier(Modifier::BOLD),
             accent_bold: Style::default().fg(accent).add_modifier(Modifier::BOLD),
             selection,
+        }
+    }
+}
+
+fn resolve_color(value: Option<&str>, field: &str) -> Option<Color> {
+    let raw = value?;
+    match parse_color(raw) {
+        Some(color) => Some(color),
+        None => {
+            eprintln!("geltui: unrecognized {field} `{raw}`, using default");
+            None
         }
     }
 }

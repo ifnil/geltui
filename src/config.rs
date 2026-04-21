@@ -14,9 +14,18 @@ pub struct Config {
     #[serde(default)]
     pub mpv: MpvConfig,
     #[serde(default)]
-    pub accent_color: Option<String>,
+    pub theme: ThemeConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeConfig {
+    pub accent: Option<String>,
     #[serde(default)]
     pub terminal_colors: bool,
+    pub selection_bg: Option<String>,
+    pub selection_fg: Option<String>,
+    pub dim_fg: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
