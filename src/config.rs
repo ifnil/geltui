@@ -11,14 +11,22 @@ pub struct Config {
     pub username: Option<String>,
     pub password: Option<String>,
     pub user_id: Option<String>,
-    pub mpv_bin: Option<String>,
-    pub mpv_args: Option<Vec<String>>,
     #[serde(default)]
-    pub mpv_ontop: bool,
+    pub mpv: MpvConfig,
     #[serde(default)]
     pub accent_color: Option<String>,
     #[serde(default)]
     pub terminal_colors: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MpvConfig {
+    pub bin: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub ontop: bool,
 }
 
 impl Config {

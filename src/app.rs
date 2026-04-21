@@ -141,18 +141,16 @@ impl App {
             .collect::<Result<_>>()?;
 
         let auth_token = self.session.auth_token().to_string();
-        let mpv_bin = self.config.mpv_bin.as_deref().unwrap_or("mpv");
+        let mpv_bin = self.config.mpv.bin.as_deref().unwrap_or("mpv");
         let mut command = Command::new(mpv_bin);
 
         command.arg(format!(
             "--http-header-fields=X-MediaBrowser-Token: {auth_token}"
         ));
 
-        if let Some(extra_args) = self.config.mpv_args.as_deref() {
-            command.args(extra_args);
-        }
+        command.args(&self.config.mpv.args);
 
-        if self.config.mpv_ontop {
+        if self.config.mpv.ontop {
             command.arg("--ontop");
         }
 
@@ -202,18 +200,16 @@ impl App {
 
         let url = self.session.playback_url(&id)?;
         let auth_token = self.session.auth_token().to_string();
-        let mpv_bin = self.config.mpv_bin.as_deref().unwrap_or("mpv");
+        let mpv_bin = self.config.mpv.bin.as_deref().unwrap_or("mpv");
         let mut command = Command::new(mpv_bin);
 
         command.arg(format!(
             "--http-header-fields=X-MediaBrowser-Token: {auth_token}"
         ));
 
-        if let Some(extra_args) = self.config.mpv_args.as_deref() {
-            command.args(extra_args);
-        }
+        command.args(&self.config.mpv.args);
 
-        if self.config.mpv_ontop {
+        if self.config.mpv.ontop {
             command.arg("--ontop");
         }
 
