@@ -7,7 +7,10 @@ use std::{
 
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        MouseButton, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -15,6 +18,8 @@ use ratatui::{
     Frame,
     Terminal,
     backend::CrosstermBackend,
+    layout::Rect,
+    widgets::ListState,
 };
 
 use crate::{
@@ -29,6 +34,8 @@ pub struct App {
     theme: crate::theme::Theme,
     navigator: Navigator,
     status: String,
+    list_state: ListState,
+    list_area: Rect,
 }
 
 impl App {
@@ -42,26 +49,35 @@ impl App {
             theme,
             navigator: Navigator::new(root),
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
+            list_state: ListState::default(),
+            list_area: Rect::default(),
         })
     }
 
     pub fn run(mut self) -> Result<()> {
+        let mouse_enabled = self.config.general.mouse;
         let original_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             let _ = disable_raw_mode();
-            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+            let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
             original_hook(info);
         }));
 
         enable_raw_mode().context("failed to enable raw mode")?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+        if mouse_enabled {
+            execute!(stdout, EnableMouseCapture).context("failed to enable mouse capture")?;
+        }
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).context("failed to initialize terminal")?;
 
         let result = self.run_loop(&mut terminal);
 
+        if mouse_enabled {
+            let _ = execute!(terminal.backend_mut(), DisableMouseCapture);
+        }
         disable_raw_mode().context("failed to disable raw mode")?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)
             .context("failed to leave alternate screen")?;
@@ -78,18 +94,20 @@ impl App {
 
             if event::poll(Duration::from_millis(200)).context("failed to poll terminal events")? {
                 let event = event::read().context("failed to read terminal event")?;
-                if let Event::Key(key) = event
-                    && key.kind == KeyEventKind::Press
-                {
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break;
-                    }
+                match event {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            break;
+                        }
 
-                    if self.handle_key(key.code)? {
-                        break;
+                        if self.handle_key(key.code)? {
+                            break;
+                        }
                     }
+                    Event::Mouse(mouse) => self.handle_mouse(mouse)?,
+                    _ => {}
                 }
             }
         }
@@ -259,7 +277,47 @@ impl App {
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
-        crate::ui::render(frame, &self.navigator, &self.theme, &self.status);
+    fn render(&mut self, frame: &mut Frame) {
+        let areas = crate::ui::render(
+            frame,
+            &self.navigator,
+            &self.theme,
+            &self.status,
+            &mut self.list_state,
+        );
+        self.list_area = areas.list;
+    }
+
+    fn handle_mouse(&mut self, event: MouseEvent) -> Result<()> {
+        let col = event.column;
+        let row = event.row;
+        let in_list = col >= self.list_area.x
+            && col < self.list_area.x + self.list_area.width
+            && row >= self.list_area.y
+            && row < self.list_area.y + self.list_area.height;
+
+        match event.kind {
+            MouseEventKind::ScrollDown if in_list => {
+                self.navigator.current_mut().next();
+            }
+            MouseEventKind::ScrollUp if in_list => {
+                self.navigator.current_mut().previous();
+            }
+            MouseEventKind::Down(MouseButton::Left) if in_list => {
+                let offset = self.list_state.offset();
+                let row_idx = offset + (row - self.list_area.y) as usize;
+                let state = self.navigator.current_mut();
+                if row_idx < state.items.len() {
+                    let was_selected = state.selected == row_idx;
+                    state.selected = row_idx;
+                    if was_selected {
+                        self.open_selected()?;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 }

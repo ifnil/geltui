@@ -15,6 +15,25 @@ pub struct Config {
     pub mpv: MpvConfig,
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub general: GeneralConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeneralConfig {
+    #[serde(default = "default_true")]
+    pub mouse: bool,
+}
+
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self { mouse: true }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

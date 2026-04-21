@@ -11,7 +11,13 @@ use crate::{
     theme::{FOLDER_ICON, OTHER_ICON, PLAYABLE_ICON, Theme},
 };
 
-pub fn render(frame: &mut Frame, area: Rect, state: &BrowserState, theme: &Theme) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    state: &BrowserState,
+    theme: &Theme,
+    list_state: &mut ListState,
+) {
     let is_season = state.is_season_view();
 
     let items: Vec<ListItem> = state
@@ -32,11 +38,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &BrowserState, theme: &Theme
 
     let list = List::new(items).highlight_style(theme.selection);
 
-    let mut list_state = ListState::default();
-    if !state.items.is_empty() {
+    if state.items.is_empty() {
+        list_state.select(None);
+    } else {
         list_state.select(Some(state.selected));
     }
-    frame.render_stateful_widget(list, area, &mut list_state);
+    frame.render_stateful_widget(list, area, list_state);
 }
 
 fn icon_for(item: &MediaItem) -> &'static str {
