@@ -88,8 +88,8 @@ fn fit_segments(segments: &[&str], max_width: usize) -> Vec<String> {
     }
 
     // Fallback: return a single segment containing the left-truncated full line.
-    let drop = joined_len - max_width + 1; // +1 for the leading ellipsis
-    let mut out = String::from("\u{2026}"); // …
+    let drop = joined_len - max_width + 3; // +3 for the leading "..."
+    let mut out = String::from("...");
     out.extend(joined.chars().skip(drop));
     vec![out]
 }
@@ -102,12 +102,12 @@ fn shorten_to(s: &str, budget: usize) -> String {
     if budget == 0 {
         return String::new();
     }
-    if budget == 1 {
-        return "\u{2026}".to_string();
+    if budget <= 3 {
+        return ".".repeat(budget);
     }
-    let keep = budget - 1;
+    let keep = budget - 3;
     let mut out: String = s.chars().take(keep).collect();
-    out.push('\u{2026}');
+    out.push_str("...");
     out
 }
 

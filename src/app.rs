@@ -14,13 +14,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{
-    Frame,
-    Terminal,
-    backend::CrosstermBackend,
-    layout::Rect,
-    widgets::ListState,
-};
+use ratatui::{Frame, Terminal, backend::CrosstermBackend, layout::Rect};
 
 use crate::{
     config::Config,
@@ -44,10 +38,10 @@ enum ContextAction {
 }
 
 const HELP_LINES: &[(&str, &str)] = &[
-    ("j / \u{2193}", "next item"),
-    ("k / \u{2191}", "previous item"),
-    ("l / \u{2192} / Enter", "open / play"),
-    ("h / \u{2190} / Backspace", "back"),
+    ("j / Down", "next item"),
+    ("k / Up", "previous item"),
+    ("l / Right / Enter", "open / play"),
+    ("h / Left / Backspace", "back"),
     ("s", "shuffle show"),
     ("m", "item menu"),
     ("n", "toggle autoplay next episode"),
@@ -63,7 +57,6 @@ pub struct App {
     theme: crate::theme::Theme,
     navigator: Navigator,
     status: String,
-    list_state: ListState,
     list_area: Rect,
     modal: Option<Modal>,
     autoplay_next: bool,
@@ -84,7 +77,6 @@ impl App {
             theme,
             navigator: Navigator::new(root),
             status: "Connected to Jellyfin. Press Enter to open or play.".to_string(),
-            list_state: ListState::default(),
             list_area: Rect::default(),
             modal: None,
             autoplay_next,
@@ -134,6 +126,21 @@ impl App {
             terminal
                 .draw(|frame| self.render(frame))
                 .context("failed to render terminal frame")?;
+
+            // Direct-to-terminal render of the list pane, after ratatui's diff
+            // has emitted everything else. Bypasses the buffer diff so stale
+            // cells cannot persist.
+            if self.modal.is_none() {
+                let area = self.list_area;
+                let state = self.navigator.current();
+                crate::ui::browser::render_direct(
+                    terminal.backend_mut(),
+                    area,
+                    state,
+                    &self.theme,
+                )
+                .context("failed to render list pane")?;
+            }
 
             if event::poll(Duration::from_millis(200)).context("failed to poll terminal events")? {
                 let event = event::read().context("failed to read terminal event")?;
@@ -488,13 +495,7 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
-        let areas = crate::ui::render(
-            frame,
-            &self.navigator,
-            &self.theme,
-            &self.status,
-            &mut self.list_state,
-        );
+        let areas = crate::ui::render(frame, &self.navigator, &self.theme, &self.status);
         self.list_area = areas.list;
 
         match &self.modal {
@@ -525,7 +526,12 @@ impl App {
                 self.navigator.current_mut().previous();
             }
             MouseEventKind::Down(MouseButton::Left) if in_list => {
-                let offset = self.list_state.offset();
+                let state_ref = self.navigator.current();
+                let offset = crate::ui::browser::compute_offset(
+                    state_ref.selected,
+                    state_ref.items.len(),
+                    self.list_area.height as usize,
+                );
                 let row_idx = offset + (row - self.list_area.y) as usize;
                 let state = self.navigator.current_mut();
                 if row_idx < state.items.len() {
@@ -537,7 +543,12 @@ impl App {
                 }
             }
             MouseEventKind::Down(MouseButton::Right) if in_list => {
-                let offset = self.list_state.offset();
+                let state_ref = self.navigator.current();
+                let offset = crate::ui::browser::compute_offset(
+                    state_ref.selected,
+                    state_ref.items.len(),
+                    self.list_area.height as usize,
+                );
                 let row_idx = offset + (row - self.list_area.y) as usize;
                 let state = self.navigator.current_mut();
                 if row_idx < state.items.len() {

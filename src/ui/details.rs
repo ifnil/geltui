@@ -35,8 +35,8 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
     // Series/season/episode
     if let Some(series) = &item.series_name {
         let season_ep = match (item.parent_index_number, item.index_number) {
-            (Some(s), Some(e)) => format!("{series} \u{2014} Season {s}, Episode {e}"),
-            (None, Some(e)) => format!("{series} \u{2014} Episode {e}"),
+            (Some(s), Some(e)) => format!("{series} - Season {s}, Episode {e}"),
+            (None, Some(e)) => format!("{series} - Episode {e}"),
             _ => series.clone(),
         };
         lines.push(Line::from(Span::styled(season_ep, theme.muted)));
@@ -53,7 +53,7 @@ fn build_text(item: &MediaItem, theme: &Theme) -> Text<'static> {
         if !meta.is_empty() {
             meta.push_str("  |  ");
         }
-        write!(meta, "\u{2605} {score:.1}").unwrap();
+        write!(meta, "* {score:.1}").unwrap();
     }
     if let Some(yr) = item.production_year {
         if !meta.is_empty() {

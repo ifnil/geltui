@@ -4,10 +4,14 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::config::Config;
 
-pub const FOLDER_ICON: &str = "\u{25B8}"; // ▸
-pub const PLAYABLE_ICON: &str = "\u{25B6}"; // ▶
-pub const OTHER_ICON: &str = "\u{00B7}"; // ·
-pub const BREADCRUMB_SEP: &str = " \u{203A} "; // " › "
+// ASCII-only so unicode-width agrees with every terminal. The fancier
+// ▸/▶/· glyphs are "ambiguous width" (U+25B8, U+25B6, U+00B7): some
+// terminals draw them 2 cells wide, and the cursor-advance mismatch
+// leaves stale cells at the start of list rows between frames.
+pub const FOLDER_ICON: &str = ">";
+pub const PLAYABLE_ICON: &str = "*";
+pub const OTHER_ICON: &str = "-";
+pub const BREADCRUMB_SEP: &str = " > ";
 
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -183,18 +187,18 @@ pub fn parse_color(input: &str) -> Option<Color> {
     Some(color)
 }
 
-/// Truncate a string to `max_chars` Unicode scalar values, appending `…` if
+/// Truncate a string to `max_chars` Unicode scalar values, appending `...` if
 /// shortened. `max_chars == 0` returns an empty string.
 pub fn truncate(s: &str, max_chars: usize) -> Cow<'_, str> {
     let len = s.chars().count();
     if len <= max_chars {
         return Cow::Borrowed(s);
     }
-    if max_chars == 0 {
-        return Cow::Owned(String::new());
+    if max_chars <= 3 {
+        return Cow::Owned(".".repeat(max_chars));
     }
-    let keep = max_chars - 1;
+    let keep = max_chars - 3;
     let mut out: String = s.chars().take(keep).collect();
-    out.push('\u{2026}'); // …
+    out.push_str("...");
     Cow::Owned(out)
 }

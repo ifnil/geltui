@@ -57,7 +57,7 @@ pub fn render_menu(frame: &mut Frame, menu: &Menu, theme: &Theme) {
     lines.push(Line::from(Span::styled(menu.title.clone(), theme.title)));
     lines.push(Line::from(""));
     for (i, entry) in menu.entries.iter().enumerate() {
-        let marker = if i == menu.selected { "\u{25B8} " } else { "  " };
+        let marker = if i == menu.selected { "> " } else { "  " };
         let text = format!("{marker}{entry}");
         let style = if i == menu.selected {
             theme.selection

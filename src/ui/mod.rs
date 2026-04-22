@@ -1,5 +1,5 @@
 mod breadcrumb;
-mod browser;
+pub mod browser;
 mod details;
 mod footer;
 pub mod menu;
@@ -7,7 +7,6 @@ pub mod menu;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    widgets::ListState,
 };
 
 use crate::{state::Navigator, theme::Theme};
@@ -49,17 +48,10 @@ pub fn layout(area: Rect) -> Areas {
     }
 }
 
-pub fn render(
-    frame: &mut Frame,
-    navigator: &Navigator,
-    theme: &Theme,
-    status: &str,
-    list_state: &mut ListState,
-) -> Areas {
+pub fn render(frame: &mut Frame, navigator: &Navigator, theme: &Theme, status: &str) -> Areas {
     let areas = layout(frame.area());
 
     breadcrumb::render(frame, areas.breadcrumb, navigator.trail(), theme);
-    browser::render(frame, areas.list, navigator.current(), theme, list_state);
     details::render(
         frame,
         areas.details,
@@ -67,6 +59,9 @@ pub fn render(
         theme,
     );
     footer::render(frame, areas.footer, status, HOTKEY_HINTS, theme);
+    // NOTE: the list pane is rendered directly to the terminal after
+    // `terminal.draw` returns (see `browser::render_direct`), bypassing
+    // ratatui's buffer/diff pipeline for that rectangle.
 
     areas
 }
